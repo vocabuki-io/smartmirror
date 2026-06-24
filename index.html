@@ -2,7 +2,11 @@
 <html>
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="玄関">
 <script src="./support.js"></script>
 </head>
 <body>
@@ -118,7 +122,6 @@ class Component extends DCLogic {
     for(const w of this.layout) g.appendChild(this.makeTile(w));
     if(this.doneBtn) this.doneBtn.style.display = this.editing?'flex':'none';
     if(this.gearBtn) this.gearBtn.style.display = this.editing?'flex':'none';
-    if(this.fsBtn) this.fsBtn.style.display = this.editing?'none':'flex';
   }
   makeTile(w){
     const t=document.createElement('div'); const T=this.TYPES[w.type];
@@ -282,8 +285,8 @@ class Component extends DCLogic {
   scrollMsg(msg){
     if(!msg) return '';
     const m=this.esc(msg);
-    return `<div style="position:absolute;bottom:7px;left:0;right:0;overflow:hidden;height:16px;pointer-events:none;">`+
-      `<div style="display:inline-block;white-space:nowrap;animation:marq 14s linear infinite;font-size:11px;font-weight:700;color:#d9534f;opacity:.9;">`+
+    return `<div style="position:absolute;bottom:18px;left:0;right:0;overflow:hidden;height:18px;display:flex;align-items:center;pointer-events:none;">`+
+      `<div style="display:inline-block;white-space:nowrap;animation:marq 14s linear infinite;font-size:11px;line-height:18px;font-weight:700;color:#d9534f;opacity:.9;">`+
       `${m}　　　　${m}　　　　</div></div>`;
   }
   gomiInline(now,sz){
@@ -326,7 +329,7 @@ class Component extends DCLogic {
         `<span style="font-size:20px;opacity:.85;">${leaveTxt(n0)}</span></div>`
       : `<div style="font-size:22px;opacity:.5;">本日終了</div>`;
     const more = arr.slice(1,5).map(n=>`<span style="font-family:Fredoka;font-weight:600;font-size:26px;opacity:.55;">${n.hhmm}</span>`).join('<span style="opacity:.25;margin:0 2px;">·</span>');
-    return `<div style="display:flex;flex-direction:column;height:100%;justify-content:center;align-items:center;gap:8px;width:100%;padding-bottom:${dl?'14px':'0'};">`+
+    return `<div style="display:flex;flex-direction:column;height:100%;justify-content:center;align-items:center;gap:8px;width:100%;padding-bottom:${dl?'24px':'0'};">`+
       label(19)+head+
       (more?`<div style="display:flex;align-items:center;gap:10px;overflow:hidden;">${more}</div>`:'')+
       `</div>`+this.scrollMsg(dl?this.delayMsg(cf.line):'');
@@ -389,19 +392,6 @@ class Component extends DCLogic {
     this.doneBtn.addEventListener('click',()=>this.exitEdit());
     this.gearBtn=mk('⚙',{left:'calc(16px + env(safe-area-inset-left))',background:'#fff',color:'#9a8b78',fontSize:'21px'});
     this.gearBtn.addEventListener('click',()=>this.openSettings());
-    // 全画面ボタン（常時表示・編集中は隠す）
-    const fb=document.createElement('div'); fb.textContent='⛶';
-    Object.assign(fb.style,{position:'absolute',top:'calc(12px + env(safe-area-inset-top))',right:'calc(16px + env(safe-area-inset-right))',width:'40px',height:'40px',borderRadius:'50%',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'19px',background:'rgba(255,255,255,.7)',color:'#9a8b78',boxShadow:'0 4px 12px rgba(120,100,80,.16)',cursor:'pointer',zIndex:'35'});
-    fb.addEventListener('click',(e)=>{ e.stopPropagation(); this.toggleFullscreen(); });
-    this.stage.appendChild(fb); this.fsBtn=fb;
-  }
-  toggleFullscreen(){
-    const d=document, el=d.documentElement;
-    const fs=d.fullscreenElement||d.webkitFullscreenElement;
-    try{
-      if(fs){ (d.exitFullscreen||d.webkitExitFullscreen).call(d); }
-      else { (el.requestFullscreen||el.webkitRequestFullscreen||function(){}).call(el); }
-    }catch(_){}
   }
   enterEdit(){ if(this.editing) return; this.editing=true; this.hideTip(); this.renderGrid(); }
   exitEdit(){ this.editing=false; this.renderGrid(); }
