@@ -1,0 +1,508 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@500;700&family=Fredoka:wght@500;600;700&display=swap" rel="stylesheet">
+<script src="./dash-engine.js"></script>
+<style>
+  html,body{margin:0;height:100%;background:#f4eee3;overflow:hidden;-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent;font-family:'Zen Maru Gothic',sans-serif;}
+  *{box-sizing:border-box;}
+  @keyframes wig{0%{transform:rotate(-1.1deg)}50%{transform:rotate(1.1deg)}100%{transform:rotate(-1.1deg)}}
+  @keyframes pop{from{transform:scale(.82);opacity:0}to{transform:scale(1);opacity:1}}
+  @keyframes floatIn{from{transform:translateY(10px);opacity:0}to{transform:translateY(0);opacity:1}}
+</style>
+</helmet>
+<div ref="{{ setStage }}" style="position:fixed;inset:0;background:radial-gradient(120% 120% at 50% 0%,#f8f3ea 0%,#f1e9da 100%);padding:calc(12px + env(safe-area-inset-top)) calc(16px + env(safe-area-inset-right)) calc(12px + env(safe-area-inset-bottom)) calc(16px + env(safe-area-inset-left));">
+  <div ref="{{ setGrid }}" style="width:100%;height:100%;display:grid;grid-template-columns:repeat(4,1fr);grid-template-rows:repeat(2,1fr);gap:12px;"></div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:568,&quot;height&quot;:320}}">
+class Component extends DCLogic {
+  TYPES = {
+    clock:   {jp:'時計',   bg:'#ece6f7', ink:'#8574b0', emoji:'🕐'},
+    weather: {jp:'天気',   bg:'#dcecf8', ink:'#5f86a6', emoji:'🌤️'},
+    trainJ:  {jp:'十条',   bg:'#dceedd', ink:'#5aa074', emoji:'🚃'},
+    trainH:  {jp:'東十条', bg:'#dbe7f7', ink:'#6184b2', emoji:'🚆'},
+    gomi:    {jp:'ゴミ',   bg:'#fbeeca', ink:'#c0975a', emoji:'🗑️'}
+  };
+  // valid sizes per type: [h,w]
+  SIZES = {
+    clock:   [[1,1],[2,2],[1,4],[2,4]],
+    weather: [[1,1],[2,2],[1,4],[2,4]],
+    trainJ:  [[1,1],[2,2],[1,4]],
+    trainH:  [[1,1],[2,2],[1,4]],
+    gomi:    [[1,1]]
+  };
+  DEF_LAYOUT = [
+    {id:'weather', type:'weather', r:1,c:1,h:1,w:1},
+    {id:'trainJ',  type:'trainJ',  r:1,c:2,h:1,w:1},
+    {id:'trainH',  type:'trainH',  r:1,c:3,h:1,w:1},
+    {id:'gomi',    type:'gomi',    r:1,c:4,h:1,w:1},
+    {id:'clock',   type:'clock',   r:2,c:1,h:1,w:4}
+  ];
+  DEF_CONFIG = {
+    lat:35.7625, lon:139.7208, walkJ:16, walkH:17,
+    delayUrl:'delay.json'
+  };
+
+  renderVals(){
+    return {
+      setStage:(n)=>{ if(n){ this.stage=n; this._tryBoot(); } },
+      setGrid:(n)=>{ if(n){ this.grid=n; this._tryBoot(); } }
+    };
+  }
+  _tryBoot(){
+    if(this._booted) return;
+    if(!this.stage || !this.grid) return;
+    if(!window.DashEngine){ setTimeout(()=>this._tryBoot(),60); return; }
+    this._booted = true; this.boot();
+  }
+
+  /* ---------- boot ---------- */
+  boot(){
+    this.E = window.DashEngine;
+    this.editing = false;
+    this.wx = null; this.delay = null;
+    this.load();
+    this.makeChrome();
+    this.renderGrid();
+    this.refreshWx();
+    this.refreshDelay();
+    this.attachLongPress();
+    this.attachDrag();
+    this.startTimers();
+    this.showTip();
+  }
+  load(){
+    let s=null;
+    try{ s=JSON.parse(localStorage.getItem('dash_se_v2')); }catch(e){}
+    if(s && Array.isArray(s.layout) && s.layout.length){
+      this.layout = s.layout.filter(w=>this.TYPES[w.type]).map(w=>({id:w.id,type:w.type,r:w.r||1,c:w.c||1,h:w.h||1,w:w.w||1}));
+      this.config = Object.assign(JSON.parse(JSON.stringify(this.DEF_CONFIG)), s.config||{});
+    }else{
+      this.layout = JSON.parse(JSON.stringify(this.DEF_LAYOUT));
+      this.config = JSON.parse(JSON.stringify(this.DEF_CONFIG));
+    }
+  }
+  save(){ try{ localStorage.setItem('dash_se_v2', JSON.stringify({layout:this.layout,config:this.config})); }catch(e){} }
+
+  /* ---------- grid helpers ---------- */
+  cellId(r,c,exceptId){
+    for(const z of this.layout){ if(z.id===exceptId) continue;
+      if(r>=z.r && r<z.r+z.h && c>=z.c && c<z.c+z.w) return z.id; }
+    return null;
+  }
+  fitsExcept(h,w,r,c,id){
+    if(r<1||c<1||r+h-1>2||c+w-1>4) return false;
+    for(let rr=r;rr<r+h;rr++) for(let cc=c;cc<c+w;cc++){ if(this.cellId(rr,cc,id)) return false; }
+    return true;
+  }
+  occMap(){ const m={}; for(const z of this.layout) for(let r=z.r;r<z.r+z.h;r++) for(let c=z.c;c<z.c+z.w;c++) m[r+','+c]=z.id; return m; }
+
+  /* ---------- render ---------- */
+  renderGrid(){
+    const g=this.grid; g.innerHTML='';
+    if(this.editing){
+      const occ=this.occMap();
+      for(let r=1;r<=2;r++) for(let c=1;c<=4;c++){ if(!occ[r+','+c]) g.appendChild(this.makeAddTile(r,c)); }
+    }
+    for(const w of this.layout) g.appendChild(this.makeTile(w));
+    if(this.doneBtn) this.doneBtn.style.display = this.editing?'flex':'none';
+    if(this.gearBtn) this.gearBtn.style.display = this.editing?'flex':'none';
+  }
+  makeTile(w){
+    const t=document.createElement('div'); const T=this.TYPES[w.type];
+    t.dataset.id=w.id; t.dataset.type=w.type;
+    Object.assign(t.style,{
+      gridRow:`${w.r} / span ${w.h}`, gridColumn:`${w.c} / span ${w.w}`,
+      background:T.bg, color:T.ink, borderRadius:'26px',
+      display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center',
+      gap:'2px', position:'relative', overflow:'hidden', textAlign:'center', padding:'8px',
+      boxShadow:'0 7px 18px rgba(150,130,110,.12), inset 0 1px 0 rgba(255,255,255,.65)',
+      transition:'transform .18s ease', willChange:'transform'
+    });
+    if(this.editing){
+      t.style.animation='wig .9s ease-in-out infinite';
+      t.style.animationDelay=(-Math.random()*0.9)+'s';
+      t.style.cursor='grab';
+    }
+    this.fillContent(t,w);
+    return t;
+  }
+  makeAddTile(r,c){
+    const t=document.createElement('div');
+    Object.assign(t.style,{
+      gridRow:`${r} / span 1`, gridColumn:`${c} / span 1`,
+      border:'2px dashed rgba(120,100,80,.22)', background:'rgba(255,255,255,.28)',
+      borderRadius:'26px', display:'flex', alignItems:'center', justifyContent:'center',
+      fontSize:'44px', color:'rgba(120,100,80,.4)', cursor:'pointer', animation:'pop .25s ease'
+    });
+    t.dataset.add='1'; t.textContent='＋';
+    t.addEventListener('click',(e)=>{ e.stopPropagation(); this.openPicker(r,c); });
+    return t;
+  }
+  fillContent(t,w){
+    t.innerHTML = this.widgetHTML(w);
+    if(this.editing) this.addEditChrome(t,w);
+  }
+  addEditChrome(t,w){
+    const T=this.TYPES[w.type];
+    const lab=document.createElement('div'); lab.textContent=T.jp;
+    Object.assign(lab.style,{position:'absolute',top:'8px',left:'12px',fontSize:'12px',fontWeight:'700',opacity:'.6',pointerEvents:'none'});
+    t.appendChild(lab);
+    const m=document.createElement('div'); m.textContent='−'; m.dataset.btn='1';
+    Object.assign(m.style,{position:'absolute',top:'7px',right:'7px',width:'26px',height:'26px',borderRadius:'50%',background:'#ff9aa8',color:'#fff',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'21px',fontWeight:'700',lineHeight:'1',boxShadow:'0 2px 6px rgba(200,90,110,.4)',cursor:'pointer',zIndex:'6'});
+    m.addEventListener('click',(e)=>{ e.stopPropagation(); this.removeWidget(w); });
+    t.appendChild(m);
+    if(this.SIZES[w.type].length>1){
+      const rz=document.createElement('div'); rz.textContent='⤢'; rz.dataset.btn='1';
+      Object.assign(rz.style,{position:'absolute',bottom:'7px',right:'7px',width:'26px',height:'26px',borderRadius:'50%',background:'rgba(255,255,255,.85)',color:T.ink,display:'flex',alignItems:'center',justifyContent:'center',fontSize:'14px',fontWeight:'700',boxShadow:'0 2px 6px rgba(120,100,80,.22)',cursor:'pointer',zIndex:'6'});
+      rz.addEventListener('click',(e)=>{ e.stopPropagation(); this.cycleSize(w); });
+      t.appendChild(rz);
+    }
+  }
+
+  /* ---------- content helpers ---------- */
+  pad(n){ return String(n).padStart(2,'0'); }
+  sizeKey(w){ return w.h+'x'+w.w; }
+  emojiStyle(size){ return `font-size:${size}px;line-height:1;filter:saturate(.6) drop-shadow(0 5px 8px rgba(120,110,130,.18));`; }
+  widgetHTML(w){ const fn=this['html_'+w.type]; return fn ? fn.call(this,w) : ''; }
+
+  /* ===== CLOCK ===== */
+  analogClock(now){
+    const s=now.getSeconds(), m=now.getMinutes()+s/60, h=(now.getHours()%12)+m/60;
+    const ha=h*30, ma=m*6, sa=s*6, R=Math.PI/180;
+    const hand=(ang,len,wd,col,op)=>`<line x1="50" y1="50" x2="${(50+len*Math.sin(ang*R)).toFixed(2)}" y2="${(50-len*Math.cos(ang*R)).toFixed(2)}" stroke="${col}" stroke-width="${wd}" stroke-linecap="round" opacity="${op}"/>`;
+    let ticks='';
+    for(let i=0;i<12;i++){ const a=i*30*R, x1=50+38*Math.sin(a), y1=50-38*Math.cos(a), x2=50+44*Math.sin(a), y2=50-44*Math.cos(a);
+      ticks+=`<line x1="${x1.toFixed(2)}" y1="${y1.toFixed(2)}" x2="${x2.toFixed(2)}" y2="${y2.toFixed(2)}" stroke="rgba(120,100,150,.32)" stroke-width="${i%3===0?2.6:1.2}" stroke-linecap="round"/>`; }
+    return `<svg viewBox="0 0 100 100" style="width:96%;height:96%;max-height:100%;"><circle cx="50" cy="50" r="47" fill="rgba(255,255,255,.5)" stroke="rgba(140,120,170,.22)" stroke-width="1.5"/>${ticks}${hand(ha,24,5,'currentColor',.85)}${hand(ma,34,3.4,'currentColor',.7)}${hand(sa,38,1.6,'#e6849b',1)}<circle cx="50" cy="50" r="3.2" fill="currentColor"/></svg>`;
+  }
+  html_clock(w){
+    const now=new Date(), day=now.getDay(), k=this.sizeKey(w);
+    const dcol = day===0?'#d98a8a':day===6?'#7fa8cf':'currentColor';
+    if(k==='1x1') return this.analogClock(now);
+    const dowSpan=`<span style="color:${dcol};font-family:'Zen Maru Gothic'">(${this.E.DOW[day]})</span>`;
+    const secSmall=(sz)=>`<span style="font-size:${Math.round(sz*0.42)}px;opacity:.5;margin-left:6px;">${this.pad(now.getSeconds())}</span>`;
+    if(k==='2x2'){
+      const big=92;
+      return `<div style="font-family:Fredoka;font-weight:600;font-size:${big}px;line-height:.85;">${this.pad(now.getHours())}:${this.pad(now.getMinutes())}</div>`+
+             `<div style="font-family:Fredoka;font-weight:500;font-size:26px;margin-top:14px;opacity:.8;">${now.getMonth()+1}.${now.getDate()} ${dowSpan}</div>`;
+    }
+    if(k==='1x4'){
+      const big=104;
+      return `<div style="display:flex;align-items:center;justify-content:center;gap:26px;height:100%;">`+
+        `<div style="font-family:Fredoka;font-weight:600;font-size:${big}px;line-height:.82;display:flex;align-items:baseline;">${this.pad(now.getHours())}:${this.pad(now.getMinutes())}${secSmall(big)}</div>`+
+        `<div style="font-family:Fredoka;font-weight:500;font-size:30px;opacity:.8;text-align:left;line-height:1.25;">${now.getMonth()+1}.${now.getDate()}<br>${dowSpan}</div></div>`;
+    }
+    // 2x4 — full screen
+    const big=176;
+    const temp = (this.wx && !this.wx.err && this.wx.temp!=null) ? `<span style="margin-left:26px;color:#cf9a6a;">${this.wx.temp}°</span>` : '';
+    return `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;">`+
+      `<div style="font-family:Fredoka;font-weight:600;font-size:${big}px;line-height:.82;display:flex;align-items:baseline;">${this.pad(now.getHours())}:${this.pad(now.getMinutes())}${secSmall(big)}</div>`+
+      `<div style="font-family:Fredoka;font-weight:500;font-size:40px;margin-top:20px;opacity:.82;">${now.getMonth()+1}.${now.getDate()} ${dowSpan}${temp}</div></div>`;
+  }
+
+  /* ===== WEATHER ===== */
+  wxEmoji(){
+    const x=this.wx; if(!x) return '🌤️'; if(x.err) return '🌫️';
+    if(x.prec>0 || x.popMax>=70) return '☔';
+    const c=x.code;
+    if(c==null) return x.popMax>=50?'☔':'☀️';
+    if(c===0) return '☀️';
+    if(c<=2) return '⛅';
+    if(c===3) return '☁️';
+    if(c===45||c===48) return '🌫️';
+    if(c>=51&&c<=67) return '☔';
+    if(c>=71&&c<=77) return '❄️';
+    if(c>=80&&c<=82) return '🌦️';
+    if(c>=95) return '⛈️';
+    return '☁️';
+  }
+  uvEmoji(){
+    const x=this.wx; if(!x||x.err) return '🧢';
+    const u = x.uvMax!=null ? x.uvMax : x.uv;
+    if(u==null) return '🧢';
+    if(u<3) return '😌';      // 弱い
+    if(u<6) return '🧢';      // ふつう（帽子）
+    if(u<8) return '🧴';      // 強い（日焼け止め）
+    return '🥵';              // 非常に強い
+  }
+  minmax(big){
+    const x=this.wx; if(!x||x.err||x.tmax==null) return '';
+    return `<div style="font-family:Fredoka;font-weight:600;font-size:${big}px;"><span style="color:#e0857f">${x.tmax}°</span><span style="opacity:.35;margin:0 4px">/</span><span style="color:#7fa8cf">${x.tmin}°</span></div>`;
+  }
+  html_weather(w){
+    const k=this.sizeKey(w), e=this.wxEmoji();
+    if(k==='1x1') return `<div style="${this.emojiStyle(98)}">${e}</div>`;
+    if(k==='2x2'){
+      return `<div style="${this.emojiStyle(116)}">${e}</div><div style="margin-top:8px;">${this.minmax(30)}</div>`;
+    }
+    if(k==='1x4'){
+      return `<div style="display:flex;align-items:center;justify-content:center;gap:30px;height:100%;">`+
+        `<div style="${this.emojiStyle(96)}">${e}</div>`+
+        `<div style="display:flex;flex-direction:column;align-items:flex-start;gap:8px;">${this.minmax(34)}<div style="${this.emojiStyle(46)}">${this.uvEmoji()}</div></div></div>`;
+    }
+    // 2x4
+    return `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:14px;">`+
+      `<div style="${this.emojiStyle(180)}">${e}</div>${this.minmax(48)}<div style="${this.emojiStyle(64)}">${this.uvEmoji()}</div></div>`;
+  }
+
+  /* ===== TRAINS ===== */
+  trainCfg(type,k){
+    const omiya = (k!=='1x1');
+    if(type==='trainJ') return {st:'十条', line:'saikyo', walk:this.config.walkJ,
+        label: omiya?'大宮ほうめん':'新宿ほうめん', dir: omiya?'down_omiya':'up_ikebukuro'};
+    return {st:'東十条', line:'keihin', walk:this.config.walkH,
+        label: omiya?'大宮ほうめん':'東京ほうめん', dir: omiya?'down_omiya':'up_tokyo'};
+  }
+  delayed(line){ const d=this.delay; if(!d||d.err) return false; return line==='saikyo'?!!d.saikyo:!!d.keihin; }
+  html_trainJ(w){ return this.html_train(w); }
+  html_trainH(w){ return this.html_train(w); }
+  html_train(w){
+    const k=this.sizeKey(w), cf=this.trainCfg(w.type,k);
+    const arr=this.E.nextTrains(cf.st,cf.dir,cf.walk,new Date(),6);
+    const bang = this.delayed(cf.line) ? `<span style="color:#e8806f;font-weight:700;margin-left:2px;">！</span>` : '';
+    const lbl=(sz,extraBang)=>`<div style="font-size:${sz}px;opacity:.62;font-weight:700;">${cf.label}${extraBang?bang:''}</div>`;
+    if(k==='1x1'){
+      const n=arr[0]; const time=n?n.hhmm:'──';
+      return `<div style="font-family:Fredoka;font-weight:600;font-size:46px;line-height:.9;">${time}${bang}</div>`+
+             `<div style="font-size:14px;opacity:.62;font-weight:700;margin-top:6px;">${cf.label}</div>`;
+    }
+    if(k==='2x2'){
+      const n=arr[0]; const big=n?n.hhmm:'──';
+      const mins=n?(n.leaveMin<=0?'もう出て！🏃':'あと'+n.leaveMin+'分'):'本日終了';
+      return `<div style="font-family:Fredoka;font-weight:600;font-size:82px;line-height:.88;">${big}${bang}</div>`+
+             `<div style="font-size:19px;opacity:.62;font-weight:700;margin-top:8px;">${cf.label}</div>`+
+             `<div style="font-size:24px;margin-top:6px;opacity:.85;">${mins}</div>`;
+    }
+    // 1x4 — horizontal list of ideal departures (leave-home times)
+    const chips=arr.slice(0,5).map(n=>{
+      const lv = n.leaveMin<=0?'いま出る':(n.leaveMin+'分後に出る');
+      return `<div style="display:flex;flex-direction:column;align-items:center;gap:3px;min-width:80px;">`+
+        `<span style="font-family:Fredoka;font-weight:600;font-size:42px;line-height:1;">${n.hhmm}</span>`+
+        `<span style="font-size:13px;opacity:.6;">${lv}</span></div>`;
+    }).join('<span style="opacity:.22;font-size:30px;align-self:center;margin-top:-12px;">·</span>');
+    return `<div style="display:flex;flex-direction:column;height:100%;justify-content:center;gap:10px;width:100%;">`+
+      `<div style="font-size:19px;opacity:.62;font-weight:700;">${cf.label}${bang}</div>`+
+      `<div style="display:flex;align-items:center;justify-content:center;gap:14px;overflow:hidden;">${chips||'<span style=\"opacity:.5\">本日終了</span>'}</div></div>`;
+  }
+
+  /* ===== GOMI ===== */
+  gomiToday(d){
+    const day=d.getDay(), nth=Math.ceil(d.getDate()/7), out=[];
+    if(day===1||day===4) out.push({emoji:'🔥',name:'可燃ごみ'});
+    if(day===2){
+      if(nth===1||nth===3) out.push({emoji:'🫙',name:'不燃ごみ'});
+      out.push({emoji:'🥫',name:'缶・瓶・ペット'});
+    }
+    if(day===6) out.push({emoji:'🐥',name:'プラスチック'});
+    return out;
+  }
+  html_gomi(w){
+    const items=this.gomiToday(new Date());
+    if(!items.length) return `<div style="${this.emojiStyle(78)};opacity:.5;">💤</div>`;
+    const sz=items.length>1?60:92;
+    return `<div style="display:flex;align-items:center;justify-content:center;gap:8px;flex-wrap:wrap;">`+
+      items.map(it=>`<div style="${this.emojiStyle(sz)}">${it.emoji}</div>`).join('')+`</div>`;
+  }
+
+  /* ---------- async refresh ---------- */
+  async refreshWx(){
+    try{ this.wx = await this.E.fetchWeather(this.config.lat,this.config.lon); }
+    catch(e){ this.wx={err:1}; }
+    this.repaint('weather'); this.repaint('clock');
+  }
+  async refreshDelay(){
+    if(!this.config.delayUrl){ this.delay={err:1}; this.repaintTrains(); return; }
+    try{
+      const r=await fetch(this.config.delayUrl); const j=await r.json();
+      const has=(kw)=>(j||[]).some(o=>{const n=(o.name||'')+(o.company||'');return n.includes(kw);});
+      this.delay={saikyo:has('埼京'), keihin:has('京浜東北')};
+    }catch(e){ this.delay={err:1}; }
+    this.repaintTrains();
+  }
+  repaint(type){
+    if(this.editing) return;
+    this.layout.filter(w=>w.type===type).forEach(w=>{
+      const t=this.grid.querySelector(`[data-id="${w.id}"]`); if(t) this.fillContent(t,w);
+    });
+  }
+  repaintTrains(){ this.repaint('trainJ'); this.repaint('trainH'); }
+  startTimers(){
+    this._t1=setInterval(()=>{ if(this.editing) return; ['clock','trainJ','trainH'].forEach(ty=>this.repaint(ty)); },1000);
+    this._t2=setInterval(()=>{ this.refreshWx(); this.refreshDelay(); }, 10*60*1000);
+  }
+  componentWillUnmount(){ clearInterval(this._t1); clearInterval(this._t2); }
+
+  /* ---------- edit mode ---------- */
+  makeChrome(){
+    const mk=(txt,pos)=>{ const b=document.createElement('div'); b.textContent=txt;
+      Object.assign(b.style,{position:'absolute',bottom:'calc(14px + env(safe-area-inset-bottom))',width:'48px',height:'48px',borderRadius:'50%',display:'none',alignItems:'center',justifyContent:'center',fontSize:'23px',boxShadow:'0 6px 16px rgba(120,100,80,.25)',cursor:'pointer',zIndex:'40'},pos);
+      this.stage.appendChild(b); return b; };
+    this.doneBtn=mk('✓',{right:'calc(16px + env(safe-area-inset-right))',background:'#aee3c0',color:'#2f7a4e'});
+    this.doneBtn.addEventListener('click',()=>this.exitEdit());
+    this.gearBtn=mk('⚙',{left:'calc(16px + env(safe-area-inset-left))',background:'#fff',color:'#9a8b78',fontSize:'21px'});
+    this.gearBtn.addEventListener('click',()=>this.openSettings());
+  }
+  enterEdit(){ if(this.editing) return; this.editing=true; this.hideTip(); this.renderGrid(); }
+  exitEdit(){ this.editing=false; this.renderGrid(); }
+  removeWidget(w){ this.layout=this.layout.filter(x=>x.id!==w.id); this.save(); this.renderGrid(); }
+  cycleSize(w){
+    const order=this.SIZES[w.type]; if(order.length<2) return;
+    let i=order.findIndex(s=>s[0]===w.h&&s[1]===w.w); if(i<0) i=0;
+    for(let k=1;k<=order.length;k++){
+      const [h,wd]=order[(i+k)%order.length];
+      const r=Math.max(1,Math.min(w.r,2-(h-1)));
+      const c=Math.max(1,Math.min(w.c,4-(wd-1)));
+      if(this.fitsExcept(h,wd,r,c,w.id)){ w.h=h; w.w=wd; w.r=r; w.c=c; this.save(); this.renderGrid(); return; }
+    }
+  }
+  openPicker(r,c){
+    const back=this.overlay();
+    const card=document.createElement('div');
+    Object.assign(card.style,{background:'#fffdf8',borderRadius:'24px',padding:'18px',boxShadow:'0 18px 50px rgba(80,60,40,.28)',animation:'floatIn .25s ease',maxWidth:'82%'});
+    card.innerHTML=`<div style="font-size:14px;font-weight:700;color:#9a8b78;text-align:center;margin-bottom:14px;">どれをおく？</div>`;
+    const row=document.createElement('div');
+    Object.assign(row.style,{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:'10px'});
+    Object.keys(this.TYPES).forEach(ty=>{
+      const T=this.TYPES[ty];
+      const chip=document.createElement('div');
+      Object.assign(chip.style,{background:T.bg,color:T.ink,borderRadius:'18px',padding:'14px 8px',display:'flex',flexDirection:'column',alignItems:'center',gap:'6px',cursor:'pointer',minWidth:'72px'});
+      chip.innerHTML=`<div style="font-size:34px;filter:saturate(.6)">${T.emoji}</div><div style="font-size:12px;font-weight:700">${T.jp}</div>`;
+      chip.addEventListener('click',(e)=>{ e.stopPropagation();
+        this.layout.push({id:'t'+Date.now().toString(36),type:ty,r,c,h:1,w:1});
+        this.save(); back.remove(); this.renderGrid();
+      });
+      row.appendChild(chip);
+    });
+    card.appendChild(row); back.appendChild(card);
+  }
+  openSettings(){
+    const back=this.overlay();
+    const card=document.createElement('div');
+    Object.assign(card.style,{background:'#fffdf8',borderRadius:'24px',padding:'20px',boxShadow:'0 18px 50px rgba(80,60,40,.28)',animation:'floatIn .25s ease',width:'min(420px,86%)'});
+    const numRow=(lbl,key,val)=>`<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin:7px 0"><span style="font-size:14px;color:#6b5e57">${lbl}</span><input data-k="${key}" value="${val}" style="width:140px;border:1px solid #ece2d2;background:#faf6ee;border-radius:11px;padding:9px 11px;font-size:14px;font-family:Fredoka;text-align:right;color:#6b5e57"></div>`;
+    card.innerHTML=`<div style="font-size:15px;font-weight:700;color:#9a8b78;margin-bottom:8px">せってい</div>
+      <div style="font-size:12px;font-weight:700;color:#bcae9a;letter-spacing:.08em;margin:8px 0 2px">徒歩（分）</div>
+      ${numRow('十条駅まで','walkJ',this.config.walkJ)}${numRow('東十条駅まで','walkH',this.config.walkH)}
+      <div style="font-size:12px;font-weight:700;color:#bcae9a;letter-spacing:.08em;margin:14px 0 2px">自宅の座標</div>
+      ${numRow('緯度','lat',this.config.lat)}${numRow('経度','lon',this.config.lon)}
+      <div style="font-size:11px;color:#c2b6a4;margin-top:10px;line-height:1.5">ゴミの日は固定（🔥可燃=月木 / 🫙不燃=第1・3火 / 🥫缶瓶ペット=火 / 🐥プラ=土）</div>`;
+    const btns=document.createElement('div');
+    Object.assign(btns.style,{display:'flex',gap:'10px',marginTop:'18px'});
+    const reset=document.createElement('div'); reset.textContent='初期化';
+    Object.assign(reset.style,{flex:'1',textAlign:'center',padding:'12px',borderRadius:'14px',background:'#f3ece0',color:'#c87a96',fontSize:'14px',fontWeight:'700',cursor:'pointer'});
+    reset.addEventListener('click',(e)=>{ e.stopPropagation(); if(confirm('初期配置にもどす？')){ this.layout=JSON.parse(JSON.stringify(this.DEF_LAYOUT)); this.config=JSON.parse(JSON.stringify(this.DEF_CONFIG)); this.save(); back.remove(); this.wx=null; this.delay=null; this.renderGrid(); this.refreshWx(); this.refreshDelay(); } });
+    const okb=document.createElement('div'); okb.textContent='ほぞん';
+    Object.assign(okb.style,{flex:'2',textAlign:'center',padding:'12px',borderRadius:'14px',background:'#aee3c0',color:'#2f7a4e',fontSize:'14px',fontWeight:'700',cursor:'pointer'});
+    okb.addEventListener('click',(e)=>{ e.stopPropagation();
+      card.querySelectorAll('[data-k]').forEach(inp=>{ const v=parseFloat(inp.value); if(!isNaN(v)) this.config[inp.dataset.k]=v; });
+      this.save(); back.remove(); this.wx=null; this.renderGrid(); this.refreshWx();
+    });
+    btns.appendChild(reset); btns.appendChild(okb); card.appendChild(btns);
+    back.appendChild(card);
+  }
+  overlay(){
+    const back=document.createElement('div');
+    Object.assign(back.style,{position:'absolute',inset:'0',background:'rgba(70,55,40,.32)',backdropFilter:'blur(2px)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:'60'});
+    back.addEventListener('click',()=>back.remove());
+    this.stage.appendChild(back);
+    return back;
+  }
+
+  /* ---------- long press ---------- */
+  attachLongPress(){
+    const s=this.stage; let timer=null,sx=0,sy=0;
+    const cancel=()=>{ if(timer){ clearTimeout(timer); timer=null; } };
+    s.addEventListener('pointerdown',(e)=>{
+      if(this.editing) return;
+      if(e.target.closest('[data-add]')) return;
+      sx=e.clientX; sy=e.clientY; cancel();
+      timer=setTimeout(()=>{ timer=null; this.enterEdit(); if(navigator.vibrate) navigator.vibrate(15); },520);
+    });
+    s.addEventListener('pointermove',(e)=>{ if(timer && Math.hypot(e.clientX-sx,e.clientY-sy)>10) cancel(); });
+    s.addEventListener('pointerup',cancel);
+    s.addEventListener('pointercancel',cancel);
+    s.addEventListener('pointerleave',cancel);
+  }
+
+  /* ---------- drag & swap ---------- */
+  attachDrag(){
+    const g=this.grid; let st=null;
+    g.addEventListener('pointerdown',(e)=>{
+      if(!this.editing) return;
+      const tile=e.target.closest('[data-id]'); if(!tile) return;
+      if(e.target.closest('[data-btn]')) return;
+      const w=this.layout.find(x=>x.id===tile.dataset.id); if(!w) return;
+      const rect=g.getBoundingClientRect();
+      st={tile,w,rect,sx:e.clientX,sy:e.clientY,moved:false,pid:e.pointerId};
+      try{ tile.setPointerCapture(e.pointerId); }catch(_){}
+    });
+    g.addEventListener('pointermove',(e)=>{
+      if(!st) return;
+      const dx=e.clientX-st.sx, dy=e.clientY-st.sy;
+      if(!st.moved){ if(Math.hypot(dx,dy)<8) return; st.moved=true;
+        st.tile.style.transition='none'; st.tile.style.animation='none';
+        st.tile.style.zIndex='50'; st.tile.style.boxShadow='0 18px 34px rgba(120,100,80,.28)';
+      }
+      st.tile.style.transform=`translate(${dx}px,${dy}px) scale(1.05)`;
+      this.showDrop(e.clientX,e.clientY,st);
+    });
+    const up=(e)=>{ if(!st) return; if(st.moved) this.resolveDrop(e.clientX,e.clientY,st); this.clearDrop(); st=null; };
+    g.addEventListener('pointerup',up);
+    g.addEventListener('pointercancel',up);
+  }
+  target(x,y,st){
+    const gap=12, rect=st.rect;
+    const cw=(rect.width-3*gap)/4, ch=(rect.height-gap)/2;
+    let col=Math.floor((x-rect.left)/(cw+gap)); col=Math.max(0,Math.min(3,col))+1;
+    let row=Math.floor((y-rect.top)/(ch+gap));  row=Math.max(0,Math.min(1,row))+1;
+    const tr=Math.max(1,Math.min(2-(st.w.h-1),row));
+    const tc=Math.max(1,Math.min(4-(st.w.w-1),col));
+    return {tr,tc,cw,ch,gap,rect};
+  }
+  showDrop(x,y,st){
+    const {tr,tc,cw,ch,gap,rect}=this.target(x,y,st);
+    if(!this.dropEl){ this.dropEl=document.createElement('div');
+      Object.assign(this.dropEl.style,{position:'fixed',border:'2px dashed rgba(120,100,80,.45)',background:'rgba(255,255,255,.25)',borderRadius:'24px',zIndex:'45',pointerEvents:'none'});
+      this.stage.appendChild(this.dropEl);
+    }
+    Object.assign(this.dropEl.style,{
+      left:(rect.left+(tc-1)*(cw+gap))+'px', top:(rect.top+(tr-1)*(ch+gap))+'px',
+      width:(st.w.w*cw+(st.w.w-1)*gap)+'px', height:(st.w.h*ch+(st.w.h-1)*gap)+'px', display:'block'
+    });
+  }
+  clearDrop(){ if(this.dropEl){ this.dropEl.remove(); this.dropEl=null; } }
+  resolveDrop(x,y,st){
+    const {tr,tc}=this.target(x,y,st); const w=st.w;
+    const ids=new Set();
+    for(let r=tr;r<tr+w.h;r++) for(let c=tc;c<tc+w.w;c++){ const id=this.cellId(r,c,w.id); if(id) ids.add(id); }
+    if(ids.size===0){ w.r=tr; w.c=tc; }
+    else if(ids.size===1){
+      const o=this.layout.find(z=>z.id===[...ids][0]);
+      if(o && o.h===w.h && o.w===w.w){ const r0=w.r,c0=w.c; w.r=o.r; w.c=o.c; o.r=r0; o.c=c0; }
+    }
+    this.save(); this.renderGrid();
+  }
+
+  /* ---------- tip ---------- */
+  showTip(){
+    const tip=document.createElement('div'); tip.textContent='長押しでへんしゅう ✎';
+    Object.assign(tip.style,{position:'absolute',top:'calc(10px + env(safe-area-inset-top))',left:'50%',transform:'translateX(-50%)',background:'rgba(255,255,255,.82)',color:'#9a8b78',fontSize:'12px',fontWeight:'700',padding:'6px 14px',borderRadius:'999px',boxShadow:'0 4px 12px rgba(120,100,80,.16)',zIndex:'30',transition:'opacity .6s ease',pointerEvents:'none'});
+    this.stage.appendChild(tip); this.tip=tip;
+    setTimeout(()=>this.hideTip(),4200);
+  }
+  hideTip(){ if(this.tip){ this.tip.style.opacity='0'; const t=this.tip; this.tip=null; setTimeout(()=>t.remove(),700); } }
+}
+</script>
+</body>
+</html>
