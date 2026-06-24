@@ -18,6 +18,7 @@
   @keyframes wig{0%{transform:rotate(-1.1deg)}50%{transform:rotate(1.1deg)}100%{transform:rotate(-1.1deg)}}
   @keyframes pop{from{transform:scale(.82);opacity:0}to{transform:scale(1);opacity:1}}
   @keyframes floatIn{from{transform:translateY(10px);opacity:0}to{transform:translateY(0);opacity:1}}
+  @keyframes marq{0%{transform:translateX(0)}100%{transform:translateX(-50%)}}
 </style>
 </helmet>
 <div ref="{{ setStage }}" style="position:fixed;inset:0;background:radial-gradient(120% 120% at 50% 0%,#f8f3ea 0%,#f1e9da 100%);padding:calc(12px + env(safe-area-inset-top)) calc(16px + env(safe-area-inset-right)) calc(12px + env(safe-area-inset-bottom)) calc(16px + env(safe-area-inset-left));">
@@ -117,6 +118,7 @@ class Component extends DCLogic {
     for(const w of this.layout) g.appendChild(this.makeTile(w));
     if(this.doneBtn) this.doneBtn.style.display = this.editing?'flex':'none';
     if(this.gearBtn) this.gearBtn.style.display = this.editing?'flex':'none';
+    if(this.fsBtn) this.fsBtn.style.display = this.editing?'none':'flex';
   }
   makeTile(w){
     const t=document.createElement('div'); const T=this.TYPES[w.type];
@@ -193,22 +195,26 @@ class Component extends DCLogic {
     const dowSpan=`<span style="color:${dcol};font-family:'Zen Maru Gothic'">(${this.E.DOW[day]})</span>`;
     const secSmall=(sz)=>`<span style="font-size:${Math.round(sz*0.42)}px;opacity:.5;margin-left:6px;">${this.pad(now.getSeconds())}</span>`;
     if(k==='2x2'){
-      const big=92;
-      return `<div style="font-family:Fredoka;font-weight:600;font-size:${big}px;line-height:.85;">${this.pad(now.getHours())}:${this.pad(now.getMinutes())}</div>`+
-             `<div style="font-family:Fredoka;font-weight:500;font-size:26px;margin-top:14px;opacity:.8;">${now.getMonth()+1}.${now.getDate()} ${dowSpan}</div>`;
+      const big=76;
+      return `<div style="font-family:Fredoka;font-weight:600;font-size:${big}px;line-height:.85;display:flex;align-items:baseline;justify-content:center;">${this.pad(now.getHours())}:${this.pad(now.getMinutes())}${secSmall(big)}</div>`+
+             `<div style="font-family:Fredoka;font-weight:500;font-size:24px;margin-top:12px;opacity:.8;">${now.getMonth()+1}.${now.getDate()} ${dowSpan}</div>`+
+             this.gomiInline(now,14);
     }
     if(k==='1x4'){
-      const big=104;
-      return `<div style="display:flex;align-items:center;justify-content:center;gap:26px;height:100%;">`+
-        `<div style="font-family:Fredoka;font-weight:600;font-size:${big}px;line-height:.82;display:flex;align-items:baseline;">${this.pad(now.getHours())}:${this.pad(now.getMinutes())}${secSmall(big)}</div>`+
-        `<div style="font-family:Fredoka;font-weight:500;font-size:30px;opacity:.8;text-align:left;line-height:1.25;">${now.getMonth()+1}.${now.getDate()}<br>${dowSpan}</div></div>`;
+      const big=100;
+      return `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:6px;">`+
+        `<div style="display:flex;align-items:center;justify-content:center;gap:26px;">`+
+          `<div style="font-family:Fredoka;font-weight:600;font-size:${big}px;line-height:.82;display:flex;align-items:baseline;">${this.pad(now.getHours())}:${this.pad(now.getMinutes())}${secSmall(big)}</div>`+
+          `<div style="font-family:Fredoka;font-weight:500;font-size:30px;opacity:.8;text-align:left;line-height:1.25;">${now.getMonth()+1}.${now.getDate()}<br>${dowSpan}</div>`+
+        `</div>`+this.gomiInline(now,16)+`</div>`;
     }
     // 2x4 — full screen
     const big=176;
     const temp = (this.wx && !this.wx.err && this.wx.temp!=null) ? `<span style="margin-left:26px;color:#cf9a6a;">${this.wx.temp}°</span>` : '';
     return `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;">`+
       `<div style="font-family:Fredoka;font-weight:600;font-size:${big}px;line-height:.82;display:flex;align-items:baseline;">${this.pad(now.getHours())}:${this.pad(now.getMinutes())}${secSmall(big)}</div>`+
-      `<div style="font-family:Fredoka;font-weight:500;font-size:40px;margin-top:20px;opacity:.82;">${now.getMonth()+1}.${now.getDate()} ${dowSpan}${temp}</div></div>`;
+      `<div style="font-family:Fredoka;font-weight:500;font-size:40px;margin-top:20px;opacity:.82;">${now.getMonth()+1}.${now.getDate()} ${dowSpan}${temp}</div>`+
+      this.gomiInline(now,22)+`</div>`;
   }
 
   /* ===== WEATHER ===== */
@@ -242,7 +248,13 @@ class Component extends DCLogic {
   }
   html_weather(w){
     const k=this.sizeKey(w), e=this.wxEmoji();
-    if(k==='1x1') return `<div style="${this.emojiStyle(98)}">${e}</div>`;
+    if(k==='1x1'){
+      const t=(this.wx && !this.wx.err && this.wx.temp!=null)?this.wx.temp+'°':'';
+      return `<div style="position:relative;display:flex;align-items:center;justify-content:center;width:100%;height:100%;">`+
+        `<div style="${this.emojiStyle(108)}">${e}</div>`+
+        (t?`<div style="position:absolute;font-family:Fredoka;font-weight:700;font-size:30px;color:#4a3a28;text-shadow:0 1px 2px #fff,0 0 7px #fff,0 0 7px #fff;">${t}</div>`:'')+
+      `</div>`;
+    }
     if(k==='2x2'){
       return `<div style="${this.emojiStyle(116)}">${e}</div><div style="margin-top:8px;">${this.minmax(30)}</div>`;
     }
@@ -265,35 +277,59 @@ class Component extends DCLogic {
         label: omiya?'大宮ほうめん':'東京ほうめん', dir: omiya?'down_omiya':'up_tokyo'};
   }
   delayed(line){ const d=this.delay; if(!d||d.err) return false; return line==='saikyo'?!!d.saikyo:!!d.keihin; }
+  delayMsg(line){ const d=this.delay; if(!d||d.err) return ''; return line==='saikyo'?(d.saikyoMsg||'遅延あり'):(d.keihinMsg||'遅延あり'); }
+  esc(s){ return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+  scrollMsg(msg){
+    if(!msg) return '';
+    const m=this.esc(msg);
+    return `<div style="position:absolute;bottom:7px;left:0;right:0;overflow:hidden;height:16px;pointer-events:none;">`+
+      `<div style="display:inline-block;white-space:nowrap;animation:marq 14s linear infinite;font-size:11px;font-weight:700;color:#d9534f;opacity:.9;">`+
+      `${m}　　　　${m}　　　　</div></div>`;
+  }
+  gomiInline(now,sz){
+    const items=this.gomiToday(now); if(!items.length) return '';
+    const fs=sz||15;
+    return `<div style="display:flex;align-items:center;justify-content:center;gap:8px;margin-top:12px;font-size:${fs}px;opacity:.82;font-weight:700;">`+
+      items.map(it=>`<span>${it.emoji}<span style="margin-left:3px;font-size:${Math.round(fs*0.86)}px;">${it.name}</span></span>`).join('<span style="opacity:.3;margin:0 2px;">/</span>')+`</div>`;
+  }
   html_trainJ(w){ return this.html_train(w); }
   html_trainH(w){ return this.html_train(w); }
   html_train(w){
     const k=this.sizeKey(w), cf=this.trainCfg(w.type,k);
     const arr=this.E.nextTrains(cf.st,cf.dir,cf.walk,new Date(),6);
-    const bang = this.delayed(cf.line) ? `<span style="color:#e8806f;font-weight:700;margin-left:2px;">！</span>` : '';
-    const lbl=(sz,extraBang)=>`<div style="font-size:${sz}px;opacity:.62;font-weight:700;">${cf.label}${extraBang?bang:''}</div>`;
+    const dl=this.delayed(cf.line);
+    const tcol = dl ? '#d9534f' : 'currentColor';
+    const lblCol = dl ? '#d9534f' : 'currentColor';
+    const label=(sz)=>`<div style="font-size:${sz}px;font-weight:700;color:${lblCol};opacity:${dl?1:.62};">${cf.label}</div>`;
+    const n0=arr[0], n1=arr[1];
+    const leaveTxt=(n)=>n.leaveMin<=0?'もう出て！🏃':'あと'+n.leaveMin+'分';
     if(k==='1x1'){
-      const n=arr[0]; const time=n?n.hhmm:'──';
-      return `<div style="font-family:Fredoka;font-weight:600;font-size:46px;line-height:.9;">${time}${bang}</div>`+
-             `<div style="font-size:14px;opacity:.62;font-weight:700;margin-top:6px;">${cf.label}</div>`;
+      const time=n0?n0.hhmm:'──';
+      const sub=n0?(n0.leaveMin<=0?'いま':'あと'+n0.leaveMin+'分'):'終了';
+      return `<div style="font-family:Fredoka;font-weight:600;font-size:44px;line-height:.9;color:${tcol};">${time}</div>`+
+             `<div style="font-size:13px;opacity:.6;margin-top:2px;">${sub}</div>`+label(13);
     }
     if(k==='2x2'){
-      const n=arr[0]; const big=n?n.hhmm:'──';
-      const mins=n?(n.leaveMin<=0?'もう出て！🏃':'あと'+n.leaveMin+'分'):'本日終了';
-      return `<div style="font-family:Fredoka;font-weight:600;font-size:82px;line-height:.88;">${big}${bang}</div>`+
-             `<div style="font-size:19px;opacity:.62;font-weight:700;margin-top:8px;">${cf.label}</div>`+
-             `<div style="font-size:24px;margin-top:6px;opacity:.85;">${mins}</div>`;
+      const big=n0?n0.hhmm:'──';
+      const mins=n0?leaveTxt(n0):'本日終了';
+      const nextT=n1?`<div style="font-size:21px;opacity:.7;margin-top:5px;">次 ${n1.hhmm}</div>`:'';
+      return label(20)+
+        `<div style="font-family:Fredoka;font-weight:600;font-size:66px;line-height:.9;margin-top:2px;color:${tcol};">${big}<span style="font-family:'Zen Maru Gothic';font-size:22px;margin-left:3px;opacity:.7;">発</span></div>`+
+        `<div style="font-size:23px;margin-top:5px;opacity:.85;">${mins}</div>`+nextT+
+        this.scrollMsg(dl?this.delayMsg(cf.line):'');
     }
-    // 1x4 — horizontal list of ideal departures (leave-home times)
-    const chips=arr.slice(0,5).map(n=>{
-      const lv = n.leaveMin<=0?'いま出る':(n.leaveMin+'分後に出る');
-      return `<div style="display:flex;flex-direction:column;align-items:center;gap:3px;min-width:80px;">`+
-        `<span style="font-family:Fredoka;font-weight:600;font-size:42px;line-height:1;">${n.hhmm}</span>`+
-        `<span style="font-size:13px;opacity:.6;">${lv}</span></div>`;
-    }).join('<span style="opacity:.22;font-size:30px;align-self:center;margin-top:-12px;">·</span>');
-    return `<div style="display:flex;flex-direction:column;height:100%;justify-content:center;gap:10px;width:100%;">`+
-      `<div style="font-size:19px;opacity:.62;font-weight:700;">${cf.label}${bang}</div>`+
-      `<div style="display:flex;align-items:center;justify-content:center;gap:14px;overflow:hidden;">${chips||'<span style=\"opacity:.5\">本日終了</span>'}</div></div>`;
+    // 1x4 — first departure prominent + upcoming list
+    const head = n0
+      ? `<div style="display:flex;align-items:baseline;gap:10px;justify-content:center;">`+
+        `<span style="font-family:Fredoka;font-weight:600;font-size:54px;line-height:1;color:${tcol};">${n0.hhmm}</span>`+
+        `<span style="font-size:18px;opacity:.7;">発</span>`+
+        `<span style="font-size:20px;opacity:.85;">${leaveTxt(n0)}</span></div>`
+      : `<div style="font-size:22px;opacity:.5;">本日終了</div>`;
+    const more = arr.slice(1,5).map(n=>`<span style="font-family:Fredoka;font-weight:600;font-size:26px;opacity:.55;">${n.hhmm}</span>`).join('<span style="opacity:.25;margin:0 2px;">·</span>');
+    return `<div style="display:flex;flex-direction:column;height:100%;justify-content:center;align-items:center;gap:8px;width:100%;padding-bottom:${dl?'14px':'0'};">`+
+      label(19)+head+
+      (more?`<div style="display:flex;align-items:center;gap:10px;overflow:hidden;">${more}</div>`:'')+
+      `</div>`+this.scrollMsg(dl?this.delayMsg(cf.line):'');
   }
 
   /* ===== GOMI ===== */
@@ -325,8 +361,9 @@ class Component extends DCLogic {
     if(!this.config.delayUrl){ this.delay={err:1}; this.repaintTrains(); return; }
     try{
       const r=await fetch(this.config.delayUrl); const j=await r.json();
-      const has=(kw)=>(j||[]).some(o=>{const n=(o.name||'')+(o.company||'');return n.includes(kw);});
-      this.delay={saikyo:has('埼京'), keihin:has('京浜東北')};
+      const find=(kw)=>(j||[]).find(o=>{const n=(o.name||'')+(o.company||'');return n.includes(kw);});
+      const sj=find('埼京'), kh=find('京浜東北');
+      this.delay={saikyo:!!sj, keihin:!!kh, saikyoMsg:(sj&&sj.status)||'', keihinMsg:(kh&&kh.status)||''};
     }catch(e){ this.delay={err:1}; }
     this.repaintTrains();
   }
@@ -352,6 +389,19 @@ class Component extends DCLogic {
     this.doneBtn.addEventListener('click',()=>this.exitEdit());
     this.gearBtn=mk('⚙',{left:'calc(16px + env(safe-area-inset-left))',background:'#fff',color:'#9a8b78',fontSize:'21px'});
     this.gearBtn.addEventListener('click',()=>this.openSettings());
+    // 全画面ボタン（常時表示・編集中は隠す）
+    const fb=document.createElement('div'); fb.textContent='⛶';
+    Object.assign(fb.style,{position:'absolute',top:'calc(12px + env(safe-area-inset-top))',right:'calc(16px + env(safe-area-inset-right))',width:'40px',height:'40px',borderRadius:'50%',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'19px',background:'rgba(255,255,255,.7)',color:'#9a8b78',boxShadow:'0 4px 12px rgba(120,100,80,.16)',cursor:'pointer',zIndex:'35'});
+    fb.addEventListener('click',(e)=>{ e.stopPropagation(); this.toggleFullscreen(); });
+    this.stage.appendChild(fb); this.fsBtn=fb;
+  }
+  toggleFullscreen(){
+    const d=document, el=d.documentElement;
+    const fs=d.fullscreenElement||d.webkitFullscreenElement;
+    try{
+      if(fs){ (d.exitFullscreen||d.webkitExitFullscreen).call(d); }
+      else { (el.requestFullscreen||el.webkitRequestFullscreen||function(){}).call(el); }
+    }catch(_){}
   }
   enterEdit(){ if(this.editing) return; this.editing=true; this.hideTip(); this.renderGrid(); }
   exitEdit(){ this.editing=false; this.renderGrid(); }
